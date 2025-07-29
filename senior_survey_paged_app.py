@@ -71,3 +71,18 @@ else:
 
     st.markdown(f"### 🧾 결과: **{category}**")
     st.markdown("👉 당신에게 맞는 금융 상품을 추천해드릴게요.")
+
+# 마지막 페이지에서 시각화 출력
+if current_page == len(questions) + 1:
+    st.title("당신의 시니어 금융 건강 점수")
+
+    # 입력값 기반 점수화 예시 (각 요소 0~100 스케일로 가정)
+    user_scores = {
+        "월 연금 수령액": min(user_data["pension"] / 300, 1) * 100,
+        "총 자산 규모": min(user_data["assets"] / 10000, 1) * 100,
+        "월 평균 소비": max(100 - (user_data["spending"] / 300 * 100), 0),
+        "부양 가족 수": max(100 - (user_data["family_size"] - 1) * 20, 0)
+    }
+
+    fig = plot_user_scores(user_scores)
+    st.pyplot(fig)
