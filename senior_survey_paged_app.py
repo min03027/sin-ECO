@@ -1,95 +1,70 @@
-
 import streamlit as st
+import matplotlib.pyplot as plt
+import pandas as pd
 
-st.set_page_config(page_title="시니어 금융 설문", page_icon="💸", layout="centered")
+# 페이지 상태 초기화
+if 'page' not in st.session_state:
+    st.session_state.page = 1
 
-st.markdown("### 💬 시니어 금융 유형 설문")
-st.markdown("**아래 질문에 순차적으로 응답해주세요.**")
-
-if "page" not in st.session_state:
-    st.session_state.page = 0
-if "responses" not in st.session_state:
-    st.session_state.responses = {}
-
+# 질문 리스트 정의
 questions = [
-    ("나이를 입력해주세요.", "number", "age"),
-    ("성별을 선택해주세요.", "selectbox", "gender", ["남성", "여성"]),
-    ("가구원 수를 입력해주세요.", "number", "family_size"),
-    ("현재 보유한 금융자산(만원)을 입력해주세요.", "number", "assets"),
-    ("월 수령하는 연금 금액(만원)을 입력해주세요.", "number", "pension"),
-    ("월 평균 생활비(만원)은 얼마인가요?", "number", "living_cost"),
-    ("월 평균 취미/여가비(만원)는 얼마인가요?", "number", "hobby_cost"),
-    ("투자 성향을 선택해주세요.", "selectbox", "risk", ["안정형", "중립형", "공격형"])
+    ("pension", "당신의 월 연금 수령액은 얼마인가요? (단위: 만 원)"),
+    ("assets", "현재 보유한 총 금융자산은 얼마인가요? (단위: 만 원)"),
+    ("spending", "한 달 평균 소비 금액은 얼마인가요? (단위: 만 원)"),
+    ("family_size", "현재 함께 거주 중인 가족 수는 몇 명인가요? (본인 포함)")
 ]
 
-def next_page():
-    if st.session_state.get("input_value") is not None:
-        current_q = questions[st.session_state.page]
-        st.session_state.responses[current_q[2]] = st.session_state.input_value
+# 점수 시각화 함수 정의
+def plot_user_scores(user_inputs):
+    fig, ax = plt.subplots(figsize=(8, 4))
+    user_series = pd.Series(user_inputs)
+    user_series.plot(kind='bar', ax=ax)
+    ax.set_title("입력 기반 재무 요소 점수 시각화")
+    ax.set_ylabel("점수")
+    ax.set_ylim(0, 100)
+    ax.grid(axis='y', linestyle='--', alpha=0.6)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    return fig
+
+# 입력 받기
+if st.session_state.page <= len(questions):
+    key, question = questions[st.session_state.page - 1]
+    user_input = st.number_input(question, min_value=0.0, format="%.1f", key=key)
+    if st.button("다음"):
         st.session_state.page += 1
-        st.session_state.input_value = None
+        st.experimental_rerun()
 
-if st.session_state.page < len(questions):
-    q = questions[st.session_state.page]
-    st.markdown(f"**Q{st.session_state.page + 1}. {q[0]}**")
+# 결과 출력
+elif st.session_state.page == len(questions) + 1:
+    st.title("\U0001F4C8 당신의 시니어 금융 건강 점수")
 
-    if q[1] == "number":
-        st.number_input(
-            label=" ",
-            key="input_value",
-            step=1,
-            format="%d",
-            on_change=next_page,
-            label_visibility="collapsed"
-        )
-    elif q[1] == "selectbox":
-        st.selectbox(
-            label=" ",
-            options=q[3],
-            key="input_value",
-            on_change=next_page,
-            label_visibility="collapsed"
-        )
-else:
-    st.success("✅ 모든 질문에 응답하셨습니다!")
-    r = st.session_state.responses
-
-    # 점수화 예시
-    score = 0
-    score += (r["assets"] or 0) * 0.003
-    score += (r["pension"] or 0) * 0.05
-    score -= (r["living_cost"] or 0) * 0.02
-    score -= (r["hobby_cost"] or 0) * 0.01
-    score += 1.0 if r["risk"] == "공격형" else (-0.5 if r["risk"] == "안정형" else 0)
-
-    if score >= 7:
-        category = "자산운용형"
-    elif score >= 4:
-        category = "균형형"
-    else:
-        category = "안정추구형"
-
-    st.markdown(f"### 🧾 결과: **{category}**")
-    st.markdown("👉 당신에게 맞는 금융 상품을 추천해드릴게요.")
-
-if current_page == len(questions) + 1:
-    st.title("당신의 시니어 금융 건강 점수")
-
-    # 입력값 가져오기 (기존 st.session_state 사용)
     pension = st.session_state.get("pension", 0)
     assets = st.session_state.get("assets", 0)
     spending = st.session_state.get("spending", 0)
     family_size = st.session_state.get("family_size", 1)
 
-    # 점수 계산 (0~100 스케일)
     user_scores = {
-        "월 연금 수령액": min(pension / 300, 1) * 100,
-        "총 자산 규모": min(assets / 10000, 1) * 100,
-        "월 평균 소비": max(100 - (spending / 300 * 100), 0),
-        "부양 가족 수": max(100 - (family_size - 1) * 20, 0)
+        "월 연금 수령액": min(pension / 300, 1) * 100,  # 300만 원 기준
+        "총 자산 규모": min(assets / 10000, 1) * 100,  # 1억 원 기준
+        "월 평균 소비": max(100 - (spending / 300 * 100), 0),  # 300만 원 초과하면 감점
+        "부양 가족 수": max(100 - (family_size - 1) * 20, 0)  # 가족 수 많을수록 점수 감소
     }
 
-    # 시각화
     fig = plot_user_scores(user_scores)
     st.pyplot(fig)
 
+    st.markdown("\n### 총평")
+    total_score = sum(user_scores.values()) / len(user_scores)
+    if total_score >= 75:
+        st.success(f"총점: {total_score:.1f}점\n\n금융적으로 매우 안정적인 상태입니다!")
+    elif total_score >= 50:
+        st.info(f"총점: {total_score:.1f}점\n\n기본적인 금융 여건은 갖추고 있으나, 일부 개선이 필요할 수 있습니다.")
+    else:
+        st.warning(f"총점: {total_score:.1f}점\n\n주의가 필요합니다. 재정 점검을 권장드립니다.")
+
+    if st.button("처음으로 돌아가기"):
+        st.session_state.page = 1
+        for k, _ in questions:
+            st.session_state.pop(k, None)
+        st.experimental_rerun()
