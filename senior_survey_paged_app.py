@@ -1,104 +1,65 @@
 import streamlit as st
 import pandas as pd
+import joblib
+from pytorch_tabnet.tab_model import TabNetClassifier
 
-st.set_page_config(page_title="시니어 금융 설문", page_icon="💸", layout="centered")
+# 모델 로드
+model = joblib.load("tabnet_model.pkl")
+le = joblib.load("label_encoder.pkl")
 
-st.title("💬 시니어 금융 유형 설문")
-st.markdown("**아래 질문에 순차적으로 응답해주세요.**")
+st.title("📋 고령자 재무 설문 & 연금 유형 분류")
 
-# 상태 초기화
-if "page" not in st.session_state:
-    st.session_state.page = 0
-if "responses" not in st.session_state:
-    st.session_state.responses = {}
+# 1. 연금 수령 여부 먼저 묻기
+pension_status = st.radio("현재 연금을 수령하고 계신가요?", ["예", "아니오"])
 
-# 설문 문항
-questions = [
-    ("나이를 입력해주세요.", "number", "age"),
-    ("성별을 선택해주세요.", "selectbox", "gender", ["남성", "여성"]),
-    ("가구원 수를 입력해주세요.", "number", "family_size"),
-    ("피부양자가 있나요?", "selectbox", "dependents", ["예", "아니오"]),
-    ("현재 보유한 금융자산(만원)을 입력해주세요.", "number", "assets"),
-    ("월 수령하는 연금 금액(만원)을 입력해주세요.", "number", "pension"),
-    ("월 평균 지출비(만원)은 얼마인가요?", "number", "living_cost"),
-    ("월 평균 소득은 얼마인가요?", "number", "income"),
-    ("투자 성향을 선택해주세요.", "selectbox", "risk", ["안정형", "안정추구형", "위험중립형", "적극투자형", "공격투자형"]),
-]
+if pension_status == "아니오":
+    st.info("❗️아직 연금을 수령 중이 아니시므로, 예측 모델을 적용할 수 없습니다.\n예측은 연금 수령 중인 사용자에게만 가능합니다.")
+    st.stop()
 
-# 다음 페이지 이동
-def next_page():
-    if st.session_state.get("input_value") is not None:
-        current_q = questions[st.session_state.page]
-        st.session_state.responses[current_q[2]] = st.session_state.input_value
-        st.session_state.page += 1
-        st.session_state.input_value = None
+# 2. 수령 중인 경우 설문 계속 진행
+st.markdown("### 👤 사용자 기본 정보")
+gender = st.selectbox("성별", ["남성", "여성"])
+age = st.slider("나이", 60, 100, 72)
+family_size = st.number_input("가구원 수", min_value=1, step=1)
+dependents = st.radio("피부양자 있음?", ["아니오", "예"])
+assets = st.number_input("총 자산 (만원)", min_value=0)
+income = st.number_input("월 소득 (만원)", min_value=0)
+living_cost = st.number_input("월 지출비 (만원)", min_value=0)
+investment = st.selectbox("투자 성향", ["안정형", "안정추구형", "위험중립형", "적극투자형", "공격투자형"])
 
-# 질문 출력
-if st.session_state.page < len(questions):
-    q = questions[st.session_state.page]
-    st.markdown(f"**Q{st.session_state.page + 1}. {q[0]}**")
-    if q[1] == "number":
-        st.number_input(" ", key="input_value", step=1, format="%d", on_change=next_page, label_visibility="collapsed")
-    elif q[1] == "selectbox":
-        st.selectbox(" ", options=q[3], key="input_value", on_change=next_page, label_visibility="collapsed")
+st.markdown("### 📌 수령 중인 연금 수령액 입력")
+pensions = {
+    "조기노령연금_예측수령액": st.number_input("조기노령연금", min_value=0.0),
+    "조기재직자노령연금_예측수령액": st.number_input("조기재직자노령연금", min_value=0.0),
+    "분할연금_예측수령액": st.number_input("분할연금", min_value=0.0),
+    "완전노령연금_예측수령액": st.number_input("완전노령연금", min_value=0.0),
+    "완전재직자노령연금_예측수령액": st.number_input("완전재직자노령연금", min_value=0.0),
+    "특례노령연금_예측수령액": st.number_input("특례노령연금", min_value=0.0)
+}
 
-# 모든 질문 완료 시
-else:
-    st.success("✅ 모든 질문에 응답하셨습니다!")
-    r = st.session_state.responses
+if st.button("📊 고령자 유형 예측 실행"):
+    # 3. 전처리
+    input_df = pd.DataFrame([{
+        "나이": age,
+        "성별": 0 if gender == "남성" else 1,
+        "가구원수": family_size,
+        "피부양자": 1 if dependents == "예" else 0,
+        "자산": assets,
+        "지출비": living_cost,
+        "소득": income,
+        "투자성향": {"안정형": 0, "안정추구형": 1, "위험중립형": 2, "적극투자형": 3, "공격투자형": 4}[investment],
+        "연금": sum(pensions.values())
+    }])
 
-    # 분위 계산 함수
-    def get_quintile(value, breaks):
-        for i, b in enumerate(breaks):
-            if value <= b:
-                return i + 1
-        return 5
+    # 4. 예측
+    pred = model.predict(input_df.values)
+    pred_label = le.inverse_transform(pred)[0]
 
-    pension_q = get_quintile(r["pension"], [10, 20, 30, 40])
-    asset_q = get_quintile(r["assets"], [5000, 10000, 30000, 50000])
-    consume_q = get_quintile(r["living_cost"], [50, 100, 150, 200])
+    best_pension = max(pensions, key=pensions.get)
+    best_amt = pensions[best_pension]
 
-    # 유형 분류 조건
-    if pension_q >= 4 and asset_q >= 4 and consume_q <= 2:
-        category = "자산운용형"
-    elif pension_q <= 2 and asset_q <= 2 and consume_q >= 4:
-        category = "위험취약형"
-    elif pension_q == 3 and asset_q == 3:
-        category = "균형형"
-    elif consume_q >= 4:
-        category = "고소비형"
-    elif pension_q <= 2 and asset_q <= 3:
-        category = "소득취약형"
-    else:
-        category = "복합형"
+    st.success(f"✅ 예측된 고령자 유형: **{pred_label}**")
+    st.markdown("### 📈 연금 수령액 요약")
+    st.dataframe(pd.DataFrame(pensions.values(), index=pensions.keys(), columns=["예측수령액(만원/월)"]))
 
-    # 결과 출력
-    st.markdown(f"## 🧾 당신의 금융 유형: **{category}**")
-    st.markdown("👉 입력 기반 재무 진단 결과입니다.")
-
-    # 분류 기준 테이블
-    result_df = pd.DataFrame({
-        "금융유형": ["자산운용형", "위험취약형", "균형형", "고소비형", "소득취약형", "복합형"],
-        "분류 조건 (요약)": [
-            "연금 분위 ≥4, 자산 분위 ≥4, 소비 분위 ≤2",
-            "연금 분위 ≤2, 자산 분위 ≤2, 소비 분위 ≥4",
-            "연금 분위 =3, 자산 분위 =3",
-            "소비 분위 ≥4",
-            "연금 분위 ≤2, 자산 분위 ≤3",
-            "기타 조합"
-        ],
-        "주요 특징": [
-            "투자 여력 풍부, 운용 중심 전략 적합",
-            "재무 위험 큼, 지출 조정 필요",
-            "안정적이고 보수적 접근 적합",
-            "지출 관리 및 절세 상품 추천 필요",
-            "기초 재정 안정 필요, 복지 연계 고려",
-            "복합적 상태, 맞춤형 전략 필요"
-        ]
-    })
-
-    # 조건 강조
-    st.dataframe(result_df.style.applymap(
-        lambda val: "background-color: #e6f7ff;" if val == category else "",
-        subset=["금융유형"]
-    ))
+    st.markdown(f"**📌 가장 유리한 연금 선택:** `{best_pension.replace('_예측수령액','')}` ({best_amt}만원/월)")
