@@ -83,6 +83,12 @@ else:
     st.markdown(f"## 🧾 예측된 당신의 금융 유형: **{label}**")
     st.info("이 결과는 입력값을 기반으로 TabNet 모델이 예측한 결과입니다.")
 
+    # 확률 시각화
+    proba = model.predict_proba(input_array)
+    proba_df = pd.DataFrame(proba, columns=encoder.classes_)
+    st.markdown("### 📊 각 금융유형에 대한 예측 확률")
+    st.bar_chart(proba_df.T)
+
     # 유형 설명
     descriptions = {
         "자산운용형": "💼 투자 여력이 충분한 유형으로, 운용 전략 중심의 포트폴리오가 적합합니다.",
