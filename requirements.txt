@@ -6,3 +6,6 @@ folium
 streamlit-folium
 pillow
 matplotlib
+scikit-learn
+joblib
+pytorch-tabnet
