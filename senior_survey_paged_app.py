@@ -80,16 +80,25 @@ else:
     prediction = model.predict(input_array)
     label = encoder.inverse_transform(prediction)[0]
 
-    st.markdown(f"## 🧾 예측된 당신의 금융 유형: **{label}**")
-    st.info("이 결과는 입력값을 기반으로 TabNet 모델이 예측한 결과입니다.")
-
-    # 확률 시각화
+    # 예측 확률
     proba = model.predict_proba(input_array)
     proba_df = pd.DataFrame(proba, columns=encoder.classes_)
+
+    # 확률 기준 상위 2개 유형 추출
+    top2 = proba_df.T.sort_values(by=0, ascending=False).head(2)
+    first_label = top2.index[0]
+    second_label = top2.index[1]
+
+    st.markdown(f"## 🧾 예측된 당신의 금융 유형")
+    st.markdown(f"**① {first_label}** ({top2.iloc[0, 0]*100:.1f}%)")
+    st.markdown(f"**② {second_label}** ({top2.iloc[1, 0]*100:.1f}%)")
+    st.info("이 결과는 TabNet 모델이 예측한 확률 기반 상위 2개 금융 유형입니다.")
+
+    # 확률 시각화
     st.markdown("### 📊 각 금융유형에 대한 예측 확률")
     st.bar_chart(proba_df.T)
 
-    # 유형 설명
+    # 설명 출력
     descriptions = {
         "자산운용형": "💼 투자 여력이 충분한 유형으로, 운용 전략 중심의 포트폴리오가 적합합니다.",
         "위험취약형": "⚠️ 재무 위험이 높은 유형입니다. 지출 관리와 복지 연계가 필요합니다.",
@@ -101,5 +110,8 @@ else:
         "복합형": "🔀 복합적인 특성을 지니며, 맞춤형 분석과 전략 수립이 요구됩니다."
     }
 
-    if label in descriptions:
-        st.markdown(descriptions[label])
+    st.markdown(f"---\n### 📌 **{first_label}** 설명")
+    st.markdown(descriptions.get(first_label, ""))
+    st.markdown(f"---\n### 📝 **{second_label}** 설명")
+    st.markdown(descriptions.get(second_label, ""))
+
