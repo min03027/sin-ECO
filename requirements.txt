@@ -9,3 +9,4 @@ matplotlib
 scikit-learn
 joblib
 pytorch-tabnet
+faiss-cpu
